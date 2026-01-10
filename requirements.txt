@@ -1,0 +1,19 @@
+# TabTransformer and CausalTab Requirements
+# ==========================================
+
+# Core ML
+torch>=1.10.0
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+
+# Utilities
+einops>=0.4.0
+tqdm>=4.62.0
+
+# Visualization (optional)
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Graph visualization (optional)
+networkx>=2.6.0
