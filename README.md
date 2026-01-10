@@ -1,71 +1,71 @@
-# TabTransformer vs CausalTab: Customs Fraud Detection
+# CausalGBM: Fair Gradient Boosting via Causal Feature Selection
 
-A comprehensive implementation comparing **TabTransformer** (Huang et al., 2020) with **CausalTab** - a novel causal-aware extension for tabular deep learning.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![IJCAI 2026](https://img.shields.io/badge/IJCAI-2026-green.svg)](https://ijcai26.org/)
+
+Official implementation of **"CausalGBM: Achieving Fairness in Tabular Classification via Causal Feature Selection"** (IJCAI 2026).
 
 ## 📋 Overview
 
-This repository contains:
+CausalGBM is a novel two-stage approach that combines **causal feature selection** with **gradient boosting** to achieve state-of-the-art fairness while maintaining competitive accuracy on tabular data.
 
-1. **TabTransformer** - Faithful implementation of the original paper "TabTransformer: Tabular Data Modeling Using Contextual Embeddings"
-2. **CausalTab** - Novel extension with:
-   - Causal Discovery Module (learns DAG structure)
-   - Causal Attention Mask (constrains attention to causal relationships)
-   - Counterfactual Regularization (optional)
+### Key Results
 
-## 🏗️ Architecture Comparison
+| Dataset | EOD Reduction | Best Method |
+|---------|---------------|-------------|
+| Adult | **94.7%** | CausalGBM-GA |
+| Online Shoppers | **90.5%** | CausalGBM-XGB |
+| German Credit | **61.5%** | CausalGBM-LGB |
+| COMPAS | **33.6%** | CausalGBM-XGB |
+| Synthetic Loan | **100%** | CausalGBM |
 
-```
-TabTransformer                          CausalTab
-─────────────                          ─────────
-                                       
-┌─────────────────┐                    ┌─────────────────┐
-│  Column Embed   │                    │  Column Embed   │
-└────────┬────────┘                    └────────┬────────┘
-         │                                      │
-         ▼                                      ▼
-┌─────────────────┐                    ┌─────────────────┐
-│  Transformer    │                    │ Causal Discovery│
-│  Layers × N     │                    │    Module       │
-│ (Full Attention)│                    └────────┬────────┘
-└────────┬────────┘                             │
-         │                             ┌────────▼────────┐
-         │                             │  Transformer    │
-         │                             │  Layers × N     │
-         │                             │(Causal Masked)  │
-         │                             └────────┬────────┘
-         ▼                                      ▼
-┌─────────────────┐                    ┌─────────────────┐
-│  Concat with    │                    │  Concat with    │
-│  Continuous     │                    │  Continuous     │
-└────────┬────────┘                    └────────┬────────┘
-         │                                      │
-         ▼                                      ▼
-┌─────────────────┐                    ┌─────────────────┐
-│      MLP        │                    │      MLP        │
-└────────┬────────┘                    └────────┬────────┘
-         │                                      │
-         ▼                                      ▼
-     Prediction                            Prediction
-```
+### Why CausalGBM?
 
-## 📁 Project Structure
+- **Fairness**: Up to 94.7% reduction in Equalized Odds Difference (EOD)
+- **Speed**: 44-56× faster than transformer-based alternatives
+- **Interpretability**: Clear visualization of which features are fair vs. unfair
+- **Simplicity**: Works with standard GBM libraries (XGBoost, LightGBM)
+
+## 🏗️ Architecture
 
 ```
-causaltab_project/
-├── models.py           # TabTransformer and CausalTab implementations
-├── data_utils.py       # Data preprocessing utilities
-├── training.py         # Training loops and evaluation
-├── run_experiment.py   # Full experiment script
-├── demo.py             # Quick demo with synthetic data
-├── requirements.txt    # Python dependencies
-└── README.md           # This file
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CausalGBM Pipeline                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Stage 1: Causal Feature Selection                                  │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐             │
+│  │  Input Data │───▶│   DAGMA     │───▶│   Causal    │             │
+│  │  (X, A, Y)  │    │ DAG Learning│    │ Importance  │             │
+│  └─────────────┘    └─────────────┘    │  cⱼ=σ(Wⱼ,Y) │             │
+│                                        └──────┬──────┘             │
+│                                               │                     │
+│                     ┌─────────────────────────▼─────────────────┐  │
+│                     │  Feature Selection: Select if cⱼ ≥ τ      │  │
+│                     │  (Remove spurious correlations with A)     │  │
+│                     └─────────────────────────┬─────────────────┘  │
+│                                               │                     │
+│  Stage 2: Gradient Boosting                   ▼                     │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐             │
+│  │  Selected   │───▶│  XGBoost /  │───▶│    Fair     │             │
+│  │  Features   │    │  LightGBM   │    │ Predictions │             │
+│  └─────────────┘    └─────────────┘    └─────────────┘             │
+│                                                                     │
+│  Optional: Group-Aware Reweighting for enhanced fairness            │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🚀 Quick Start
 
-### 1. Installation
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/DivyanshBhatia/CausalGBM.git
+cd CausalGBM
+
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
@@ -75,184 +75,338 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### 2. Run Demo (Synthetic Data)
+### Requirements
+
+```
+python>=3.10.12
+torch>=2.0
+xgboost>=1.7.6
+lightgbm>=4.0
+numpy>=1.24
+pandas>=2.0
+scikit-learn>=1.3
+matplotlib>=3.7
+dagma>=1.0  # For causal discovery
+```
+
+### Run Demo
 
 ```bash
+# Quick demo with synthetic data
 python demo.py
+
+# Full benchmark on all datasets
+python complete_benchmark.py
+
+# Reproduce paper results
+python run_experiment.py --dataset adult --seeds 42 43 44 45 46
 ```
 
-This generates synthetic customs data and trains both models for comparison.
+## 📊 Datasets
 
-### 3. Run Full Experiment (Your Data)
+### Real-World Benchmarks
+
+| Dataset | n | d | Protected | Groups | Source |
+|---------|---|---|-----------|--------|--------|
+| Adult | 32,561 | 14 | Sex | 2 | [UCI](https://archive.ics.uci.edu/ml/datasets/adult) |
+| COMPAS | 5,278 | 11 | Race | 3 | [ProPublica](https://github.com/propublica/compas-analysis) |
+| German Credit | 1,000 | 20 | Age | 3 | [UCI](https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data)) |
+| Bank Marketing | 41,188 | 20 | Age | 3 | [UCI](https://archive.ics.uci.edu/ml/datasets/bank+marketing) |
+| Online Shoppers | 12,330 | 17 | Weekend | 2 | [UCI](https://archive.ics.uci.edu/ml/datasets/Online+Shoppers+Purchasing+Intention+Dataset) |
+
+### Synthetic Datasets (included in repo)
+
+| Dataset | n | d | Protected | Description |
+|---------|---|---|-----------|-------------|
+| `synthetic_loan_data.csv` | 10,000 | 8 | Gender | Loan approval with known causal structure |
+| `synthetic_hiring_data.csv` | 10,000 | 10 | Race | Tech hiring with proxy features |
+
+**Synthetic Loan Features:**
+- **Fair** (ρ_A < 0.02): `income`, `credit_score`, `employment_years`
+- **Unfair** (ρ_A > 0.55): `works_in_tech`, `has_stem_degree`, `plays_golf`
+
+**Synthetic Hiring Features:**
+- **Fair** (ρ_A < 0.02): `coding_score`, `years_experience`, `portfolio_quality`, `education_level`
+- **Unfair** (ρ_A > 0.30): `ivy_league`, `unpaid_internships`, `golf_club_member`, `lacrosse_player`
+
+## 📁 Project Structure
+
+```
+CausalGBM/
+├── models.py                  # CausalGBM, XGBoost, LightGBM implementations
+├── data_utils.py              # Data loading and preprocessing
+├── training.py                # Training loops and evaluation
+├── run_experiment.py          # Single dataset experiments
+├── complete_benchmark.py      # Full benchmark across all datasets
+├── analysis.py                # Results analysis and visualization
+├── dag_visualization.py       # Causal graph visualization
+├── min_features_ablation.py   # Minimum features ablation study
+├── demo.py                    # Quick demo script
+├── synthetic_loan_data.csv    # Synthetic loan dataset
+├── synthetic_hiring_data.csv  # Synthetic hiring dataset
+├── requirements.txt           # Python dependencies
+└── README.md                  # This file
+```
+
+## 🔧 Usage
+
+### Basic Usage
+
+```python
+from models import CausalGBM
+from data_utils import load_dataset
+
+# Load data
+X_train, X_test, y_train, y_test, protected_train, protected_test = load_dataset('adult')
+
+# Initialize CausalGBM
+model = CausalGBM(
+    base_model='xgboost',      # 'xgboost', 'lightgbm', or 'gbm'
+    threshold=0.2,              # Causal importance threshold τ
+    min_features=3,             # Minimum features to select
+    group_aware=True            # Enable group-aware reweighting
+)
+
+# Fit model (learns causal structure + trains GBM)
+model.fit(X_train, y_train, protected_train)
+
+# Predict
+y_pred = model.predict(X_test)
+y_prob = model.predict_proba(X_test)
+
+# Get selected features
+selected_features = model.get_selected_features()
+print(f"Selected {len(selected_features)} fair features: {selected_features}")
+```
+
+### Causal Feature Analysis
+
+```python
+# Get causal importance scores for all features
+importance_scores = model.get_causal_importance()
+
+# Visualize feature selection
+model.plot_feature_importance(save_path='feature_importance.pdf')
+
+# Get learned DAG structure
+dag_matrix = model.get_dag_matrix()
+```
+
+### Fairness Evaluation
+
+```python
+from training import evaluate_fairness
+
+metrics = evaluate_fairness(
+    y_true=y_test,
+    y_pred=y_pred,
+    protected=protected_test
+)
+
+print(f"Worst-Group Accuracy: {metrics['wga']:.3f}")
+print(f"Equalized Odds Diff:  {metrics['eod']:.3f}")
+print(f"Demographic Parity:   {metrics['dpd']:.3f}")
+print(f"AUC:                  {metrics['auc']:.3f}")
+```
+
+## ⚙️ Configuration
+
+### Hyperparameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `threshold` (τ) | 0.2 | Causal importance threshold for feature selection |
+| `min_features` (m) | max(3, ⌊d/3⌋) | Minimum features to retain |
+| `dag_iterations` | 500 | DAGMA optimization iterations |
+| `dag_lr` | 0.01 | DAGMA learning rate |
+| `lambda_dag` | 0.1 | DAG acyclicity constraint weight |
+| `lambda_sp` | 0.01 | Sparsity regularization weight |
+
+### CausalGBM Variants
+
+```python
+# Standard CausalGBM (feature selection only)
+model = CausalGBM(base_model='xgboost', group_aware=False)
+
+# CausalGBM with Group-Aware reweighting (recommended)
+model = CausalGBM(base_model='xgboost', group_aware=True)
+
+# CausalGBM with LightGBM backend
+model = CausalGBM(base_model='lightgbm', group_aware=True)
+```
+
+## 📈 Reproducing Paper Results
+
+### Main Results (Table 2)
 
 ```bash
-python run_experiment.py --data_path your_customs_data.csv --epochs 50
+# Run all datasets with 5 seeds
+python complete_benchmark.py --seeds 42 43 44 45 46 --output results/
+
+# Analyze results
+python analysis.py --input results/ --output figures/
 ```
 
-## 📊 Data Format
+### Ablation Studies
 
-Your CSV should have the following structure (based on customs data schema):
+```bash
+# Minimum features ablation (Table 6)
+python min_features_ablation.py --dataset adult synthetic_loan
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `sgd.id` | string | Unique identifier (excluded from features) |
-| `sgd.date` | date | Transaction date |
-| `importer.id` | categorical | Importer identifier |
-| `declarant.id` | categorical | Declarant identifier |
-| `country` | categorical | Country of origin |
-| `office.id` | categorical | Customs office |
-| `tariff.code` | categorical | HS tariff code |
-| `quantity` | numerical | Number of items |
-| `gross.weight` | numerical | Weight in kg |
-| `fob.value` | numerical | FOB value |
-| `cif.value` | numerical | CIF value |
-| `total.taxes` | numerical | Calculated taxes |
-| `illicit` | binary | Target variable (0/1) |
+# Sensitivity analysis (threshold τ)
+python run_experiment.py --dataset adult --threshold 0.1 0.2 0.3 0.4 0.5
 
-## 🔧 Configuration
-
-Edit `run_experiment.py` to customize:
-
-```python
-class Config:
-    # Model hyperparameters
-    EMBEDDING_DIM = 32        # Embedding dimension
-    NUM_LAYERS = 6            # Number of Transformer layers
-    NUM_HEADS = 8             # Number of attention heads
-    
-    # CausalTab specific
-    CAUSAL_THRESHOLD = 0.3    # Edge threshold for causal graph
-    DAG_LOSS_WEIGHT = 1.0     # Weight for DAG constraint loss
-    
-    # Training
-    BATCH_SIZE = 256
-    LEARNING_RATE = 1e-4
-    NUM_EPOCHS = 50
+# DAG visualization (Figure 4)
+python dag_visualization.py --dataset synthetic_loan synthetic_hiring
 ```
 
-## 📈 Expected Output
+### Expected Results
 
 ```
 ============================================================
-  FINAL RESULTS
+                    MAIN RESULTS (5 seeds)
 ============================================================
-                  loss      auc  accuracy  precision    recall       f1
-TabTransformer  0.2134   0.8532    0.8123     0.4521    0.6234   0.5241
-CausalTab       0.2089   0.8678    0.8234     0.4732    0.6512   0.5481
+Dataset          Method              WGA    EOD↓   DPD↓   AUC
+------------------------------------------------------------
+Adult            XGBoost            .840   .075   .181   .927
+Adult            CausalGBM-GA       .783   .004   .064   .812
+                 EOD Reduction:     94.7%
 
-CausalTab vs TabTransformer:
-  AUC difference: +0.0146
-  CausalTab outperforms TabTransformer by 1.46%
+COMPAS           XGBoost            .632   .297   .254   .711
+COMPAS           CausalGBM-XGB      .623   .198   .224   .677
+                 EOD Reduction:     33.6%
+
+Synthetic Loan   XGBoost            .696   .333   .244   .766
+Synthetic Loan   CausalGBM          .637   .000   .000   .706
+                 EOD Reduction:     100%
+============================================================
 ```
 
-## 🔬 Understanding CausalTab
+## 🔬 Understanding CausalGBM
 
-### What Makes CausalTab Different?
+### Why Causal Feature Selection?
 
-1. **Causal Discovery**: Learns which features actually *cause* the outcome vs. which are just correlated
-2. **Masked Attention**: Only allows features to attend to their causal ancestors
-3. **Robustness**: More stable under distribution shift (when data patterns change)
-
-### Example: Why It Matters
+Traditional ML models learn **correlations**, not **causation**. This can lead to unfair predictions when features are correlated with protected attributes:
 
 ```
-Normal TabTransformer finds:
-  - Customs Office A → High Fraud Risk (correlation: 0.76)
-  
-CausalTab understands:
-  - Office A is in industrial area
-  - More high-risk importers use Office A
-  - Office itself doesn't CAUSE fraud
-  - Therefore: Ignores Office, focuses on actual causes
+Example: Loan Approval
+
+Standard ML finds:
+  - "plays_golf" → High approval rate (correlation: 0.62)
+
+CausalGBM discovers:
+  - "plays_golf" is correlated with gender (ρ = 0.55)
+  - Gender causes both golf-playing AND higher income
+  - Golf itself doesn't CAUSE creditworthiness
+  → CausalGBM rejects this feature
 ```
 
-### Visualizing the Causal Graph
+### Causal Importance Metric
 
-After training, you can visualize what CausalTab learned:
+For each feature X_j, we compute:
+
+```
+c_j = σ(W_{j,Y})
+```
+
+Where:
+- W is the learned DAG adjacency matrix from DAGMA
+- σ is the sigmoid function
+- W_{j,Y} measures the direct causal effect of X_j on Y
+
+Features with c_j < τ are removed as likely spurious correlations.
+
+## 📊 Visualizations
+
+### Feature Selection Visualization
 
 ```python
-from training import visualize_causal_graph
+from dag_visualization import plot_feature_selection
 
-visualize_causal_graph(
-    model=causaltab,
-    feature_names=['importer', 'declarant', 'country', 'office', 'tariff'],
-    threshold=0.3,
-    save_path='causal_graph.png'
+plot_feature_selection(
+    model=causalgbm,
+    feature_names=X.columns,
+    save_path='feature_selection.pdf'
 )
 ```
 
-## 🎯 Customizing for Other Datasets
+Output shows:
+- **Green bars**: Fair features (selected, low ρ_A)
+- **Red bars**: Unfair proxies (rejected, high ρ_A)
+- **Dashed line**: Selection threshold τ
 
-The implementation is generic. To use with different data:
+### Pareto Frontier
 
 ```python
-from data_utils import TabularPreprocessor
-from models import TabTransformer, CausalTab
+from analysis import plot_pareto_frontier
 
-# Define your columns
-preprocessor = TabularPreprocessor(
-    categorical_cols=['col1', 'col2', 'col3'],
-    continuous_cols=['num1', 'num2', 'num3'],
-    target_col='target',
-    id_cols=['id'],  # Columns to exclude
-)
-
-# Preprocess
-train_df, val_df, test_df = preprocessor.fit_transform(df)
-
-# Create model
-model = CausalTab(
-    categories=preprocessor.feature_info['category_counts'],
-    num_continuous=len(preprocessor.continuous_cols),
-    dim=32,
-    depth=6,
-    heads=8
+plot_pareto_frontier(
+    results_df=results,
+    dataset='adult',
+    save_path='pareto_frontier.pdf'
 )
 ```
 
-## 📚 Key Components Explained
+## ⚠️ Limitations
 
-### 1. Column Embedding (models.py)
+1. **Multi-group settings**: CausalGBM is optimized for binary protected attributes. With 8+ groups, performance degrades. Use GroupDRO instead.
 
-As per the original paper, each categorical value gets an embedding:
+2. **Small samples**: Causal discovery requires n > 5,000 for reliable results. On German Credit (n=1,000), AUC drops significantly.
+
+3. **Degenerate solutions**: On some datasets (e.g., Law School), the method achieves perfect EOD but AUC drops below 0.6, indicating trivial predictions.
+
+## 🔮 When to Use CausalGBM
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Binary protected attribute | ✅ Use CausalGBM |
+| 2-3 demographic groups | ✅ Use CausalGBM |
+| 8+ demographic groups | ❌ Use GroupDRO |
+| n < 1,000 samples | ❌ Use traditional fair ML |
+| Need interpretability | ✅ Use CausalGBM |
+| Need maximum accuracy | ⚠️ Consider accuracy trade-off |
+
+## 📚 Citation
+
+If you use CausalGBM in your research, please cite:
+
+```bibtex
+@inproceedings{bhatia2026causalgbm,
+  title={CausalGBM: Achieving Fairness in Tabular Classification via Causal Feature Selection},
+  author={Bhatia, Divyansh},
+  booktitle={Proceedings of the 35th International Joint Conference on Artificial Intelligence (IJCAI)},
+  year={2026}
+}
 ```
-e(value) = [column_identifier, value_embedding]
-```
-
-This allows the model to distinguish which column a value came from.
-
-### 2. Causal Discovery Module (models.py)
-
-Uses NOTEARS algorithm to learn a DAG:
-- Learns adjacency matrix W
-- DAG constraint: tr(e^(W⊙W)) - d = 0
-- Sparsity regularization for cleaner graphs
-
-### 3. Causal Attention Mask (models.py)
-
-Converts learned DAG to attention mask:
-- Computes transitive closure (all ancestors)
-- Blocks attention to non-ancestors
-- Allows attention only along causal paths
 
 ## 📖 References
 
-1. **TabTransformer**: Huang et al. (2020). "TabTransformer: Tabular Data Modeling Using Contextual Embeddings"
-2. **NOTEARS**: Zheng et al. (2018). "DAGs with NO TEARS: Continuous Optimization for Structure Learning"
-3. **FT-Transformer**: Gorishniy et al. (2021). "Revisiting Deep Learning Models for Tabular Data"
+1. **DAGMA**: Bello et al. (2022). "DAGMA: Learning DAGs via M-matrices and a Log-Determinant Acyclicity Characterization"
+2. **XGBoost**: Chen & Guestrin (2016). "XGBoost: A Scalable Tree Boosting System"
+3. **LightGBM**: Ke et al. (2017). "LightGBM: A Highly Efficient Gradient Boosting Decision Tree"
+4. **GroupDRO**: Sagawa et al. (2020). "Distributionally Robust Neural Networks for Group Shifts"
+5. **Counterfactual Fairness**: Kusner et al. (2017). "Counterfactual Fairness"
 
 ## 🤝 Contributing
 
 Contributions welcome! Areas for improvement:
-- [ ] Add Piecewise Linear Encoding (PLE) for numerical features
-- [ ] Implement semi-supervised pre-training (MLM/RTD)
-- [ ] Add more causal discovery algorithms
-- [ ] Benchmark on more datasets
+
+- [ ] Multi-group extension using ANOVA-based correlation
+- [ ] Adaptive threshold selection
+- [ ] Integration with more GBM libraries (CatBoost)
+- [ ] Support for continuous protected attributes
+- [ ] Comparison with more causal discovery methods
 
 ## 📄 License
 
-MIT License
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## 📧 Contact
 
-For questions about this implementation or the CausalTab research direction, please open an issue.
+For questions or issues, please:
+1. Open a GitHub issue
+2. Contact: [your-email@example.com]
+
+---
+
+**Reproducibility**: All experiments run on NVIDIA H100 GPU with Python 3.10.12, PyTorch 2.0, XGBoost 1.7.6, LightGBM 4.0. Seeds: 42, 43, 44, 45, 46.
