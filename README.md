@@ -114,16 +114,6 @@ print(f"Selected features: {selected}")
 print(f"Removed proxies: {model.get_removed_features()}")
 ```
 
-### Run Demo
-
-```bash
-# Quick demo with synthetic data
-python demo.py
-
-# Full benchmark on real datasets
-python complete_benchmark.py --datasets adult acs_income --seeds 5
-```
-
 ## 📁 Project Structure
 
 ```
@@ -178,11 +168,6 @@ Spurious:   Name_Pattern (correlated but no path to Y)
 
 **Key Finding:** CausalGBM achieves 19% EOD reduction vs Oracle's 63%, with a 70% Indirect Gap. This validates the stated limitation when indirect proxies have low correlation (|ρ| < 0.1).
 
-```bash
-# Run indirect proxy analysis
-python evaluate_indirect_proxy.py
-```
-
 ### Supported Real-World Datasets
 | Dataset | n | d | Protected | Domain |
 |---------|---|---|-----------|--------|
@@ -211,42 +196,193 @@ Results are stable across wide hyperparameter ranges:
 - EOD varies <0.025 for α ∈ [0.25, 2.0]
 - EOD varies <0.02 for τ ∈ [0.1, 0.5]
 
+---
+
 ## 📈 Reproducing Paper Results
 
-### Main Results (Table 2)
+### Command Line Interface
+
+The main experiment script `causalgbm_experiments_v2.py` supports the following arguments:
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--all` | Run all experiments | False |
+| `--main_comparison` | Run main method comparison | False |
+| `--dag_recovery` | Run DAG recovery analysis on synthetic data | False |
+| `--sensitivity` | Run hyperparameter sensitivity analysis | False |
+| `--ablation` | Run ablation study (DAG vs Correlation) | False |
+| `--datasets` | List of datasets to use | all datasets |
+| `--synthetic_loan_path` | Path to synthetic loan CSV | auto-detect |
+| `--synthetic_hiring_path` | Path to synthetic hiring CSV | auto-detect |
+| `--output_dir` | Directory for results | `results/` |
+| `--device` | Compute device | `cuda` |
+| `--quick` | Quick mode (2 seeds instead of 5) | False |
+| `--max_samples` | Max samples per dataset | 200000 |
+
+---
+
+### 🏃 Run Commands
+
+#### **1. Full Experiment Suite (All Results)**
+Reproduce all paper results including Table 2, ablations, and sensitivity analysis:
 
 ```bash
-# Run full experiments (all datasets, multiple seeds)
-python causalgbm_experiments_v2.py
+# Full experiments with GPU (recommended)
+python causalgbm_experiments_v2.py --all --device cuda --output_dir results/full
+
+# Full experiments with CPU only
+python causalgbm_experiments_v2.py --all --device cpu --output_dir results/full
 ```
 
-This script runs CausalGBM and all baselines across 9 datasets with 5 seeds, producing:
-- Main fairness comparison (Table 2)
-- Cross-method comparison (Table S3)
-- Ablation studies (DAG vs Correlation)
-- Statistical significance tests
-
-### Ablation Studies
+#### **2. Main Comparison Only (Table 2)**
+Compare CausalGBM against all baselines:
 
 ```bash
-# DAG vs Correlation ablation
-python run_experiment.py --ablation aggregation
+# All datasets
+python causalgbm_experiments_v2.py --main_comparison --output_dir results/main
 
-# Hyperparameter sensitivity
-python min_features_ablation.py --param alpha --range 0.25 2.0 0.25
+# Specific datasets only
+python causalgbm_experiments_v2.py --main_comparison \
+    --datasets adult compas german acs_income \
+    --output_dir results/main
 
-# Structure learning algorithm comparison
-python run_experiment.py --ablation structure_learning
+# Quick test (2 seeds)
+python causalgbm_experiments_v2.py --main_comparison --quick \
+    --datasets adult compas \
+    --output_dir results/quick_test
 ```
 
-### Synthetic Validation
+#### **3. DAG Recovery Analysis (Synthetic Data)**
+Evaluate causal structure recovery on synthetic datasets with known ground truth:
 
 ```bash
-# Test on synthetic data with known ground truth
-python demo.py --dataset synthetic_loan --verbose
-python demo.py --dataset synthetic_hiring --verbose
+# Run DAG recovery on synthetic datasets
+python causalgbm_experiments_v2.py --dag_recovery \
+    --datasets synthetic_loan synthetic_hiring \
+    --output_dir results/dag_recovery
 
-# Indirect proxy limitation analysis (Appendix L)
+# With custom data paths
+python causalgbm_experiments_v2.py --dag_recovery \
+    --datasets synthetic_loan synthetic_hiring \
+    --synthetic_loan_path /path/to/synthetic_loan_data.csv \
+    --synthetic_hiring_path /path/to/synthetic_hiring_data.csv \
+    --output_dir results/dag_recovery
+```
+
+#### **4. Ablation Study (DAG vs Correlation)**
+Compare different aggregation strategies:
+
+```bash
+# Ablation on all datasets
+python causalgbm_experiments_v2.py --ablation --output_dir results/ablation
+
+# Ablation on specific datasets
+python causalgbm_experiments_v2.py --ablation \
+    --datasets adult acs_income synthetic_loan \
+    --output_dir results/ablation
+```
+
+#### **5. Sensitivity Analysis**
+Test hyperparameter sensitivity (α, τ, λ_dag, λ_sp, iterations):
+
+```bash
+# Full sensitivity analysis
+python causalgbm_experiments_v2.py --sensitivity --output_dir results/sensitivity
+
+# Quick sensitivity test
+python causalgbm_experiments_v2.py --sensitivity --quick \
+    --datasets adult german \
+    --output_dir results/sensitivity_quick
+```
+
+#### **6. Combined Experiments**
+
+```bash
+# Main comparison + ablation
+python causalgbm_experiments_v2.py --main_comparison --ablation \
+    --output_dir results/comparison_ablation
+
+# DAG recovery + sensitivity on synthetic data
+python causalgbm_experiments_v2.py --dag_recovery --sensitivity \
+    --datasets synthetic_loan synthetic_hiring \
+    --output_dir results/synthetic_analysis
+
+# Everything except sensitivity (faster)
+python causalgbm_experiments_v2.py --main_comparison --dag_recovery --ablation \
+    --output_dir results/no_sensitivity
+```
+
+#### **7. Resource-Constrained Settings**
+
+```bash
+# Low memory (limit samples)
+python causalgbm_experiments_v2.py --all --max_samples 10000 \
+    --output_dir results/low_mem
+
+# CPU only with reduced load
+python causalgbm_experiments_v2.py --main_comparison --quick \
+    --device cpu --max_samples 20000 \
+    --datasets adult compas german \
+    --output_dir results/cpu_quick
+
+# Single dataset quick test
+python causalgbm_experiments_v2.py --main_comparison --quick \
+    --datasets adult --output_dir results/test_adult
+```
+
+---
+
+### 📁 Output Files
+
+After running experiments, the following files are generated in `--output_dir`:
+
+| File | Description |
+|------|-------------|
+| `main_comparison_results.csv` | Full results for all methods/datasets/seeds |
+| `dag_recovery_results.csv` | DAG structure recovery metrics (SHD, F1, etc.) |
+| `feature_selection_results.csv` | Causal vs spurious feature selection accuracy |
+| `ablation_results.csv` | Aggregation strategy comparison |
+| `sensitivity_analysis_results.csv` | Hyperparameter sensitivity results |
+| `experiment_summary.txt` | Human-readable summary of all experiments |
+
+---
+
+### 📊 Example: Complete Reproducibility Pipeline
+
+```bash
+# Step 1: Quick validation (5 min)
+python causalgbm_experiments_v2.py --main_comparison --quick \
+    --datasets adult synthetic_loan \
+    --output_dir results/validation
+
+# Step 2: Full main results (2-4 hours)
+python causalgbm_experiments_v2.py --main_comparison \
+    --output_dir results/table2
+
+# Step 3: DAG recovery analysis (30 min)
+python causalgbm_experiments_v2.py --dag_recovery \
+    --datasets synthetic_loan synthetic_hiring \
+    --output_dir results/dag_analysis
+
+# Step 4: Ablation studies (1-2 hours)
+python causalgbm_experiments_v2.py --ablation \
+    --output_dir results/ablation
+
+# Step 5: Sensitivity analysis (3-4 hours)
+python causalgbm_experiments_v2.py --sensitivity \
+    --datasets adult acs_income german \
+    --output_dir results/sensitivity
+
+# Step 6: View summary
+cat results/table2/experiment_summary.txt
+```
+
+---
+
+### Indirect Proxy Analysis (Appendix L)
+
+```bash
+# Run indirect proxy limitation analysis
 python evaluate_indirect_proxy.py
 ```
 
@@ -274,6 +410,17 @@ Selected: 4/6 features | Removed proxies: relationship, marital-status
 - **Positive score**: Predictive value > proxy signal → Keep
 - **High |ρ| but positive score**: Feature is predictive despite correlation
 
+### DAG Recovery Metrics (Synthetic Data)
+
+| Metric | Description |
+|--------|-------------|
+| SHD | Structural Hamming Distance (lower is better) |
+| Precision | Fraction of learned edges that are true edges |
+| Recall | Fraction of true edges that were learned |
+| F1 | Harmonic mean of precision and recall |
+| Causal F1 | F1 for selecting truly causal features |
+| Spurious Rejection | Rate of correctly rejecting spurious features |
+
 ## ⚠️ Limitations & When to Use
 
 ### ✅ Use CausalGBM When:
@@ -297,7 +444,7 @@ Selected: 4/6 features | Removed proxies: relationship, marital-status
 @inproceedings{causalgbm2026,
   title={CausalGBM: Achieving Fairness in Tabular Classification via Causal Feature Selection},
   author={Anonymous},
-  booktitle={Proceedings of the International Joint Conference on Artificial Intelligence (IJCAI)},
+  booktitle={Submitted to Proceedings of the International Joint Conference on Artificial Intelligence (IJCAI)},
   year={2026}
 }
 ```
