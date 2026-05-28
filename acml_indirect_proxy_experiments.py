@@ -527,19 +527,12 @@ def main():
     if args.datasets:
         dataset_names = args.datasets
     elif args.synthetic_only:
-        dataset_names = ['synthetic_loan', 'synthetic_hiring']
-        # Also load indirect proxy dataset if available
-        try:
-            indirect_path = 'synthetic_indirect_proxy_loan.csv'
-            if os.path.exists(indirect_path):
-                dataset_names.append('synthetic_indirect')
-        except:
-            pass
+        dataset_names = ['synthetic_loan', 'synthetic_hiring', 'synthetic_indirect']
     else:
         dataset_names = [
             'adult', 'acs_income', 'compas', 'german',
             'taiwan_credit', 'bank', 'online_shoppers',
-            'synthetic_loan', 'synthetic_hiring',
+            'synthetic_loan', 'synthetic_hiring', 'synthetic_indirect',
         ]
     
     # Load datasets
@@ -553,9 +546,9 @@ def main():
                 if os.path.exists(indirect_path):
                     df = pd.read_csv(indirect_path)
                     feature_cols = [c for c in df.columns 
-                                   if c not in ['race', 'loan_approved', 'gender']]
-                    sens_col = 'race' if 'race' in df.columns else 'gender'
-                    target_col = 'loan_approved'
+                                   if c not in ['Race', 'Loan_Approved']]
+                    sens_col = 'Race'
+                    target_col = 'Loan_Approved'
                     
                     from sklearn.preprocessing import LabelEncoder, StandardScaler
                     X = df[feature_cols].values.astype(np.float32)
