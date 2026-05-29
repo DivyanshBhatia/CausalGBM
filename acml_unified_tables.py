@@ -62,7 +62,8 @@ DATASET_LOADERS = {
     'synthetic_hiring': load_synthetic_hiring,
 }
 
-ABLATION_DATASETS = ['adult', 'acs_income', 'online_shoppers', 'taiwan_credit', 'bank']
+ABLATION_DATASETS = ['adult', 'acs_income', 'online_shoppers', 'taiwan_credit', 'bank',
+                     'compas', 'german', 'synthetic_loan', 'synthetic_hiring']
 
 
 def compute_extended_metrics(y_true, y_pred, y_prob, sensitive):
