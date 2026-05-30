@@ -49,79 +49,87 @@ except ImportError:
 def load_acs_public_coverage(max_samples=None, states=['CA'], year='2018'):
     """ACS Public Coverage: predict public health insurance coverage. Protected: Race."""
     from folktables import ACSDataSource, ACSPublicCoverage
+    logger.info("Loading ACS Public Coverage dataset...")
     data_source = ACSDataSource(survey_year=year, horizon='1-Year', survey='person')
     acs_data = data_source.get_data(states=states, download=True)
     features, label, group = ACSPublicCoverage.df_to_numpy(acs_data)
     
-    # Binary protected: White (1) vs non-White (0)
     sensitive = (group == 1).astype(float)
     label = label.astype(float)
+    feature_names = [f'feat_{i}' for i in range(features.shape[1])]
     
     if max_samples and len(features) > max_samples:
         idx = np.random.RandomState(42).choice(len(features), max_samples, replace=False)
         features, label, sensitive = features[idx], label[idx], sensitive[idx]
     
-    return DatasetBundle(features, label, sensitive)
+    logger.info(f"Processing acs_public_cov...")
+    logger.info(f"  acs_public_cov: n={len(features)}, d={features.shape[1]}, groups={len(np.unique(sensitive))}")
+    return DatasetBundle('acs_public_cov', features, label, sensitive, 'Race', feature_names)
 
 
 def load_acs_travel_time(max_samples=None, states=['CA'], year='2018'):
     """ACS Travel Time: predict commute > 20 min. Protected: Race."""
     from folktables import ACSDataSource, ACSTravelTime
+    logger.info("Loading ACS Travel Time dataset...")
     data_source = ACSDataSource(survey_year=year, horizon='1-Year', survey='person')
     acs_data = data_source.get_data(states=states, download=True)
     features, label, group = ACSTravelTime.df_to_numpy(acs_data)
     
     sensitive = (group == 1).astype(float)
     label = label.astype(float)
+    feature_names = [f'feat_{i}' for i in range(features.shape[1])]
     
     if max_samples and len(features) > max_samples:
         idx = np.random.RandomState(42).choice(len(features), max_samples, replace=False)
         features, label, sensitive = features[idx], label[idx], sensitive[idx]
     
-    return DatasetBundle(features, label, sensitive)
+    logger.info(f"Processing acs_travel_time...")
+    logger.info(f"  acs_travel_time: n={len(features)}, d={features.shape[1]}, groups={len(np.unique(sensitive))}")
+    return DatasetBundle('acs_travel_time', features, label, sensitive, 'Race', feature_names)
 
 
 def load_heart_disease(max_samples=None):
     """UCI Heart Disease (Cleveland). Protected: Sex. Target: presence of heart disease."""
+    logger.info("Loading Heart Disease dataset...")
     try:
         data = fetch_openml('heart-statlog', version=1, as_frame=True, parser='auto')
         df = data.frame
-        
-        # Target: 1 = heart disease present, 0 = absent
-        y = (df.iloc[:, -1].astype(str).str.strip().isin(['2', 'present', '1'])).astype(float)
-        
-        # Protected: sex (usually column index 1)
-        sex_col = None
-        for col in df.columns:
-            if 'sex' in col.lower():
-                sex_col = col
-                break
-        if sex_col is None:
-            sex_col = df.columns[1]
-        
-        sensitive = df[sex_col].astype(float)
-        
-        # Features: everything except target and sex
-        feature_cols = [c for c in df.columns[:-1] if c != sex_col]
-        X = df[feature_cols].copy()
-        
-        # Encode categoricals
-        for col in X.columns:
-            if X[col].dtype == 'object' or X[col].dtype.name == 'category':
-                X[col] = LabelEncoder().fit_transform(X[col].astype(str))
-        
-        X = X.values.astype(float)
-        y = y.values
-        sensitive = sensitive.values
-        
-        # Remove NaN rows
-        mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
-        X, y, sensitive = X[mask], y[mask], sensitive[mask]
-        
-        return DatasetBundle(X, y, sensitive)
-    except Exception as e:
-        logger.error(f"Heart Disease load failed: {e}")
-        raise
+    except:
+        try:
+            data = fetch_openml(data_id=53, as_frame=True, parser='auto')
+            df = data.frame
+        except Exception as e:
+            raise RuntimeError(f"Heart Disease: could not load from OpenML. Error: {e}")
+    
+    y = (df.iloc[:, -1].astype(str).str.strip().isin(['2', 'present', '1'])).astype(float)
+    
+    sex_col = None
+    for col in df.columns:
+        if 'sex' in col.lower():
+            sex_col = col
+            break
+    if sex_col is None:
+        sex_col = df.columns[1]
+    
+    sensitive = df[sex_col].astype(float)
+    feature_cols = [c for c in df.columns[:-1] if c != sex_col]
+    X = df[feature_cols].copy()
+    
+    for col in X.columns:
+        if X[col].dtype == 'object' or X[col].dtype.name == 'category':
+            X[col] = LabelEncoder().fit_transform(X[col].astype(str))
+    
+    fnames = list(X.columns)
+    X = X.values.astype(float)
+    y = y.values
+    sensitive = sensitive.values
+    
+    mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
+    X, y, sensitive = X[mask], y[mask], sensitive[mask]
+    
+    logger.info(f"Processing heart_disease...")
+    logger.info(f"  heart_disease: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
+    return DatasetBundle('heart_disease', X, y, sensitive, 'Sex', fnames)
 
 
 def load_student_performance(max_samples=None):
@@ -181,7 +189,11 @@ def load_student_performance(max_samples=None):
     y = (y.values if hasattr(y, 'values') else y)[mask]
     sensitive = sensitive[mask]
     
-    return DatasetBundle(X, y, sensitive)
+    fnames = list(range(X.shape[1]))
+    
+    logger.info(f"Processing student_perf...")
+    logger.info(f"  student_perf: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
+    return DatasetBundle('student_perf', X, y, sensitive, 'Sex', [f'feat_{i}' for i in range(X.shape[1])])
 
 
 def load_diabetes_pima(max_samples=None):
@@ -208,7 +220,9 @@ def load_diabetes_pima(max_samples=None):
     mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
     X, y, sensitive = X[mask], y[mask], sensitive[mask]
     
-    return DatasetBundle(X, y, sensitive)
+    logger.info(f"Processing diabetes...")
+    logger.info(f"  diabetes: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
+    return DatasetBundle('diabetes', X, y, sensitive, 'Age', [str(c) for c in feature_cols])
 
 
 def load_credit_approval(max_samples=None):
@@ -237,7 +251,9 @@ def load_credit_approval(max_samples=None):
     mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
     X, y, sensitive = X[mask], y[mask], sensitive[mask]
     
-    return DatasetBundle(X, y, sensitive)
+    logger.info(f"Processing credit_approval...")
+    logger.info(f"  credit_approval: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
+    return DatasetBundle('credit_approval', X, y, sensitive, 'Gender', [str(c) for c in feature_cols])
 
 
 def load_titanic(max_samples=None):
@@ -266,7 +282,9 @@ def load_titanic(max_samples=None):
     mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
     X, y, sensitive = X[mask], y[mask], sensitive[mask]
     
-    return DatasetBundle(X, y, sensitive)
+    logger.info(f"Processing titanic...")
+    logger.info(f"  titanic: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
+    return DatasetBundle('titanic', X, y, sensitive, 'Sex', [str(c) for c in feature_cols])
 
 
 def load_communities_crime(max_samples=None):
@@ -321,7 +339,9 @@ def load_communities_crime(max_samples=None):
     mask = ~(np.isnan(y) | np.isnan(sensitive))
     X, y, sensitive = X[mask], y[mask], sensitive[mask]
     
-    return DatasetBundle(X, y, sensitive)
+    logger.info(f"Processing communities...")
+    logger.info(f"  communities: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
+    return DatasetBundle('communities', X, y, sensitive, 'Race', [str(c) for c in feature_cols])
 
 
 # ============================================================================
