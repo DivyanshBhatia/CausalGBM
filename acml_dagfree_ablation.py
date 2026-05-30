@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from causalgbm_experiments_v2 import (
     CausalFeatureSelector, compute_metrics,
     load_adult, load_acs_income, load_compas,
-    load_german, load_bank, load_taiwan,
+    load_german, load_bank, load_taiwan_credit,
     load_online_shoppers,
     load_synthetic_loan, load_synthetic_hiring,
 )
@@ -46,7 +46,7 @@ DATASETS = {
     'compas': load_compas,
     'german': load_german,
     'bank': load_bank,
-    'taiwan': load_taiwan,
+    'taiwan': load_taiwan_credit,
     'online_shoppers': load_online_shoppers,
     'synthetic_loan': load_synthetic_loan,
     'synthetic_hiring': load_synthetic_hiring,
