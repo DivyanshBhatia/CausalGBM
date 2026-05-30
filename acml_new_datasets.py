@@ -89,66 +89,49 @@ def load_acs_travel_time(max_samples=None, states=['CA'], year='2018'):
 
 
 def load_heart_disease(max_samples=None):
-    """UCI Heart Disease (Cleveland). Protected: Sex. Target: presence of heart disease."""
+    """UCI Heart Disease. Protected: Sex. Target: heart disease."""
     logger.info("Loading Heart Disease dataset...")
+    url = "https://raw.githubusercontent.com/jbrownlee/Datasets/master/heart.csv"
     try:
-        data = fetch_openml('heart-statlog', version=1, as_frame=True, parser='auto')
-        df = data.frame
+        df = pd.read_csv(url)
     except:
-        try:
-            data = fetch_openml(data_id=53, as_frame=True, parser='auto')
-            df = data.frame
-        except Exception as e:
-            raise RuntimeError(f"Heart Disease: could not load from OpenML. Error: {e}")
+        raise RuntimeError("Heart Disease: could not download CSV")
     
-    y = (df.iloc[:, -1].astype(str).str.strip().isin(['2', 'present', '1'])).astype(float)
-    
-    sex_col = None
-    for col in df.columns:
-        if 'sex' in col.lower():
-            sex_col = col
-            break
-    if sex_col is None:
-        sex_col = df.columns[1]
-    
-    sensitive = df[sex_col].astype(float)
+    y = df.iloc[:, -1].astype(float).values
+    sex_col = [c for c in df.columns if 'sex' in c.lower() or c == df.columns[1]][0]
+    sensitive = df[sex_col].astype(float).values
     feature_cols = [c for c in df.columns[:-1] if c != sex_col]
-    X = df[feature_cols].copy()
-    
-    for col in X.columns:
-        if X[col].dtype == 'object' or X[col].dtype.name == 'category':
-            X[col] = LabelEncoder().fit_transform(X[col].astype(str))
-    
-    fnames = list(X.columns)
-    X = X.values.astype(float)
-    y = y.values
-    sensitive = sensitive.values
+    X = df[feature_cols].astype(float).values
     
     mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
     X, y, sensitive = X[mask], y[mask], sensitive[mask]
     
-    logger.info(f"Processing heart_disease...")
     logger.info(f"  heart_disease: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
-    return DatasetBundle('heart_disease', X, y, sensitive, 'Sex', fnames)
+    return DatasetBundle('heart_disease', X, y, sensitive, 'Sex', feature_cols)
 
 
 def load_student_performance(max_samples=None):
     """UCI Student Performance. Protected: Sex. Target: pass (grade >= 10) vs fail."""
-    try:
-        # Try loading from OpenML
-        data = fetch_openml('student-por', version=1, as_frame=True, parser='auto')
-        df = data.frame
-    except:
+    urls = [
+        ("https://raw.githubusercontent.com/dsrscientist/dataset1/master/student-por.csv", ";"),
+        ("https://raw.githubusercontent.com/jbrownlee/Datasets/master/student-por.csv", ";"),
+    ]
+    df = None
+    for url, sep in urls:
         try:
-            data = fetch_openml('student_performance', version=1, as_frame=True, parser='auto')
-            df = data.frame
+            df = pd.read_csv(url, sep=sep)
+            break
         except:
-            # Fallback: try direct URL
+            continue
+    if df is None:
+        try:
             url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00320/student.zip"
             import urllib.request, zipfile, io
             response = urllib.request.urlopen(url)
             z = zipfile.ZipFile(io.BytesIO(response.read()))
             df = pd.read_csv(z.open('student-por.csv'), sep=';')
+        except Exception as e:
+            raise RuntimeError(f"Student Performance: could not download. Error: {e}")
     
     # Target: final grade G3 >= 10 (pass)
     if 'G3' in df.columns:
@@ -197,111 +180,91 @@ def load_student_performance(max_samples=None):
 
 
 def load_diabetes_pima(max_samples=None):
-    """Pima Indians Diabetes. Protected: Age (>=30 vs <30). Target: diabetes onset."""
-    data = fetch_openml(data_id=37, as_frame=True, parser='auto')
-    df = data.frame
+    """Pima Diabetes. Protected: Age (>=30). Target: diabetes."""
+    logger.info("Loading Diabetes dataset...")
+    url = "https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.data.csv"
+    try:
+        cols = ['preg','glucose','bp','skin','insulin','bmi','dpf','age','outcome']
+        df = pd.read_csv(url, header=None, names=cols)
+    except:
+        raise RuntimeError("Diabetes: could not download CSV")
     
-    y = (df.iloc[:, -1].astype(str).str.strip().isin(['tested_positive', '1', 'pos'])).astype(float)
+    y = df['outcome'].astype(float).values
+    sensitive = (df['age'] >= 30).astype(float).values
+    feat_cols = [c for c in cols if c not in ['outcome', 'age']]
+    X = df[feat_cols].astype(float).values
     
-    # Protected: age binarised (>=30 vs <30)
-    age_col = None
-    for col in df.columns:
-        if 'age' in col.lower():
-            age_col = col
-            break
-    if age_col is None:
-        age_col = df.columns[7]  # Usually column 8
-    
-    sensitive = (df[age_col].astype(float) >= 30).astype(float)
-    
-    feature_cols = [c for c in df.columns[:-1] if c != age_col]
-    X = df[feature_cols].astype(float).values
-    
-    mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
-    X, y, sensitive = X[mask], y[mask], sensitive[mask]
-    
-    logger.info(f"Processing diabetes...")
     logger.info(f"  diabetes: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
-    return DatasetBundle('diabetes', X, y, sensitive, 'Age', [str(c) for c in feature_cols])
+    return DatasetBundle('diabetes', X, y, sensitive, 'Age', feat_cols)
 
 
 def load_credit_approval(max_samples=None):
-    """UCI Credit Approval. Protected: inferred Gender (col 0). Target: approval."""
+    """UCI Credit Approval. Protected: Gender. Target: approval."""
+    logger.info("Loading Credit Approval dataset...")
+    url = "https://raw.githubusercontent.com/jbrownlee/Datasets/master/crx.data"
     try:
-        data = fetch_openml('credit-approval', version=1, as_frame=True, parser='auto')
-        df = data.frame
+        df = pd.read_csv(url, header=None, na_values='?')
     except:
-        data = fetch_openml(data_id=29, as_frame=True, parser='auto')
-        df = data.frame
+        raise RuntimeError("Credit Approval: could not download CSV")
     
-    y = (df.iloc[:, -1].astype(str).str.strip().isin(['+', '1', 'yes'])).astype(float)
+    df = df.dropna().reset_index(drop=True)
+    y = (df.iloc[:, -1].astype(str).str.strip() == '+').astype(float).values
+    sensitive = LabelEncoder().fit_transform(df.iloc[:, 0].astype(str)).astype(float)
     
-    # Protected: first attribute (typically gender, encoded as a/b)
-    sens_col = df.columns[0]
-    sensitive = LabelEncoder().fit_transform(df[sens_col].astype(str)).astype(float)
-    
-    feature_cols = [c for c in df.columns[:-1] if c != sens_col]
-    X = df[feature_cols].copy()
+    X = df.iloc[:, 1:-1].copy()
+    feat_cols = [f'A{i+2}' for i in range(X.shape[1])]
     for col in X.columns:
-        if X[col].dtype == 'object' or X[col].dtype.name == 'category':
+        if X[col].dtype == 'object':
             X[col] = LabelEncoder().fit_transform(X[col].astype(str))
-        X[col] = pd.to_numeric(X[col], errors='coerce')
-    
     X = X.values.astype(float)
-    mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
-    X, y, sensitive = X[mask], y[mask], sensitive[mask]
     
-    logger.info(f"Processing credit_approval...")
     logger.info(f"  credit_approval: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
-    return DatasetBundle('credit_approval', X, y, sensitive, 'Gender', [str(c) for c in feature_cols])
+    return DatasetBundle('credit_approval', X, y, sensitive, 'Gender', feat_cols)
 
 
 def load_titanic(max_samples=None):
     """Titanic survival. Protected: Sex. Target: survived."""
+    logger.info("Loading Titanic dataset...")
+    url = "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv"
     try:
-        data = fetch_openml('titanic', version=1, as_frame=True, parser='auto')
-        df = data.frame
+        df = pd.read_csv(url)
     except:
-        data = fetch_openml(data_id=40945, as_frame=True, parser='auto')
-        df = data.frame
+        raise RuntimeError("Titanic: could not download CSV")
     
-    y = (df['survived'].astype(str).str.strip().isin(['1', 'yes'])).astype(float)
+    df.columns = df.columns.str.lower().str.strip()
+    y = df['survived'].astype(float).values
+    sensitive = (df['sex'].str.lower() == 'male').astype(float).values
     
-    sensitive = (df['sex'].astype(str).str.strip().isin(['male', '1'])).astype(float)
-    
-    drop_cols = ['survived', 'sex', 'name', 'ticket', 'cabin', 'boat', 'body', 'home.dest']
-    feature_cols = [c for c in df.columns if c.lower() not in [d.lower() for d in drop_cols]]
-    X = df[feature_cols].copy()
-    
+    drop = ['survived', 'sex', 'name', 'ticket', 'cabin']
+    feat_cols = [c for c in df.columns if c not in drop]
+    X = df[feat_cols].copy()
     for col in X.columns:
-        if X[col].dtype == 'object' or X[col].dtype.name == 'category':
+        if X[col].dtype == 'object':
             X[col] = LabelEncoder().fit_transform(X[col].astype(str))
-        X[col] = pd.to_numeric(X[col], errors='coerce')
-    
     X = X.values.astype(float)
-    mask = ~(np.isnan(X).any(axis=1) | np.isnan(y) | np.isnan(sensitive))
+    
+    mask = ~np.isnan(X).any(axis=1)
     X, y, sensitive = X[mask], y[mask], sensitive[mask]
     
-    logger.info(f"Processing titanic...")
     logger.info(f"  titanic: n={len(X)}, d={X.shape[1]}, groups={len(np.unique(sensitive))}")
-    return DatasetBundle('titanic', X, y, sensitive, 'Sex', [str(c) for c in feature_cols])
+    return DatasetBundle('titanic', X, y, sensitive, 'Sex', feat_cols)
 
 
 def load_communities_crime(max_samples=None):
     """Communities & Crime. Protected: race (majority Black vs not). Target: high crime."""
-    try:
-        data = fetch_openml(data_id=41960, as_frame=True, parser='auto')
-        df = data.frame
-    except:
+    urls = [
+        "https://archive.ics.uci.edu/ml/machine-learning-databases/communities/communities.data",
+        "https://raw.githubusercontent.com/jbrownlee/Datasets/master/communities.csv",
+    ]
+    df = None
+    for url in urls:
         try:
-            data = fetch_openml('communities', version=1, as_frame=True, parser='auto')
-            df = data.frame
-        except:
-            # Direct URL fallback
-            url = "https://archive.ics.uci.edu/ml/machine-learning-databases/communities/communities.data"
             df = pd.read_csv(url, header=None, na_values='?')
-            # Last column is target (ViolentCrimesPerPop)
-            # Column 3 is racePctBlack
+            break
+        except:
+            continue
+    if df is None:
+        raise RuntimeError("Communities & Crime: could not download from any source")
     
     # Find target and race columns
     target_col = df.columns[-1]
@@ -309,16 +272,8 @@ def load_communities_crime(max_samples=None):
     y = (y_raw >= y_raw.median()).astype(float)
     
     # Protected: race composition (look for racePctBlack or similar)
-    race_col = None
-    for col in df.columns:
-        col_str = str(col).lower()
-        if 'racepctblack' in col_str or 'race' in col_str:
-            race_col = col
-            break
-    
-    if race_col is None:
-        # Use column index 3 (typically racePctBlack in the original)
-        race_col = df.columns[min(3, len(df.columns)-2)]
+    # Communities data: column 3 is racePctBlack (or use racepctblack)
+    race_col = df.columns[3]  # racePctBlack in the standard UCI format
     
     race_vals = pd.to_numeric(df[race_col], errors='coerce')
     sensitive = (race_vals >= race_vals.median()).astype(float)
@@ -450,7 +405,7 @@ def run_experiments(n_seeds=10, output_dir='results/acml2026/new_datasets'):
                 d, alpha=0.5, threshold=0.2,
                 min_features=min_feat,
                 n_iterations=500, aggregation='max', device='cpu')
-            sel.fit(X_tr_sc, s_tr, y_tr)
+            sel.fit(X_tr_sc, np.asarray(s_tr, dtype=float), np.asarray(y_tr, dtype=float))
             cgbm_selected = set(sel.selected_)
             Xtr_s, Xte_s = sel.transform(X_tr_sc), sel.transform(X_te_sc)
             m = xgb.XGBClassifier(n_estimators=100, random_state=seed, verbosity=0)
