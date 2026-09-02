@@ -53,10 +53,10 @@ def select_with_symmetrised_scores(sel, d, alpha=0.5, tau=0.2, min_features=3):
     Symmetric: proxy_j = max(|W[d,j]|, |W[j,d]|)
                pred_j  = max(|W[j,d+1]|, |W[d+1,j]|)
     """
-    if not hasattr(sel, 'W_'):
+    if not hasattr(sel, 'learned_adjacency_') or sel.learned_adjacency_ is None:
         return None, None
     
-    W = sel.W_
+    W = sel.learned_adjacency_
     A_idx, Y_idx = d, d + 1
     
     # Original scores
@@ -68,7 +68,7 @@ def select_with_symmetrised_scores(sel, d, alpha=0.5, tau=0.2, min_features=3):
     sym_pred = np.maximum(np.abs(W[:d, Y_idx]), np.abs(W[Y_idx, :d]))
     
     # Also get correlation for max-aggregation
-    corr_A = np.abs(sel.corr_proxy_) if hasattr(sel, 'corr_proxy_') else orig_proxy
+    corr_A = np.abs(sel.correlations_) if hasattr(sel, 'correlations_') else sym_proxy
     
     # Apply max-aggregation with correlation (same as CausalGBM)
     sym_proxy_max = np.maximum(sym_proxy, corr_A)
