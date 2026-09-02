@@ -132,13 +132,7 @@ def run_table7(n_seeds=10, output_dir='results/acml2026'):
         except:
             logger.warning("NOTEARS not available — will run DAGMA-only comparison")
 
-    has_notears_mlp = False
-    try:
-        from notears.nonlinear import NotearsMLP, notears_nonlinear
-        has_notears_mlp = True
-        logger.info("NOTEARS-MLP available")
-    except:
-        pass
+    has_notears_mlp = False  # Skip MLP — dtype issues, paper uses DAGMA for stability
 
     results = []
 
@@ -189,19 +183,19 @@ def run_table7(n_seeds=10, output_dir='results/acml2026'):
                     y_std = (y_tr - y_tr.mean()) / (y_tr.std() + 1e-8)
                     Z = np.column_stack([X_tr_sc, A_std.reshape(-1,1), y_std.reshape(-1,1)])
                     W_est = notears_linear(Z, lambda1=0.1, loss_type='l2', max_iter=100)
-                    
+
                     idx_A, idx_Y = d, d + 1
                     W_A_X = np.abs(W_est[idx_A, :d])
                     W_X_Y = np.abs(W_est[:d, idx_Y])
                     corrs = np.array([abs(np.corrcoef(X_tr_sc[:, j], s_tr)[0, 1]) for j in range(d)])
                     W_prime = np.maximum(W_A_X, corrs)
                     scores = W_X_Y - 0.5 * W_prime
-                    
+
                     selected = set(np.where(scores >= 0.2)[0])
                     if len(selected) < min_feat:
                         selected = set(np.argsort(scores)[-min_feat:])
                     selected = sorted(selected)
-                    
+
                     m = xgb.XGBClassifier(n_estimators=100, random_state=seed, verbosity=0)
                     m.fit(X_tr_sc[:, selected], y_tr)
                     met = compute_metrics(y_te, m.predict(X_te_sc[:, selected]),
@@ -220,23 +214,23 @@ def run_table7(n_seeds=10, output_dir='results/acml2026'):
                     A_std = (s_tr - s_tr.mean()) / (s_tr.std() + 1e-8)
                     y_std = (y_tr - y_tr.mean()) / (y_tr.std() + 1e-8)
                     Z = np.column_stack([X_tr_sc, A_std.reshape(-1,1), y_std.reshape(-1,1)])
-                    
+
                     n_nodes = d + 2
                     model_mlp = NotearsMLP(dims=[n_nodes, 10, 1], bias=True)
                     W_est = notears_nonlinear(model_mlp, Z, lambda1=0.01, lambda2=0.01, max_iter=50)
-                    
+
                     idx_A, idx_Y = d, d + 1
                     W_A_X = np.abs(W_est[idx_A, :d])
                     W_X_Y = np.abs(W_est[:d, idx_Y])
                     corrs = np.array([abs(np.corrcoef(X_tr_sc[:, j], s_tr)[0, 1]) for j in range(d)])
                     W_prime = np.maximum(W_A_X, corrs)
                     scores = W_X_Y - 0.5 * W_prime
-                    
+
                     selected = set(np.where(scores >= 0.2)[0])
                     if len(selected) < min_feat:
                         selected = set(np.argsort(scores)[-min_feat:])
                     selected = sorted(selected)
-                    
+
                     m = xgb.XGBClassifier(n_estimators=100, random_state=seed, verbosity=0)
                     m.fit(X_tr_sc[:, selected], y_tr)
                     met = compute_metrics(y_te, m.predict(X_te_sc[:, selected]),
