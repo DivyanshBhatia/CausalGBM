@@ -1,14 +1,11 @@
 """
-Orientation Ablation
-=====================
-Proves edge directions don't matter by symmetrising the DAG:
-  proxy = max(|W_{A→X}|, |W_{X→A}|)
-  pred  = max(|W_{X→Y}|, |W_{Y→X}|)
+Orientation Ablation — Table 2 Protocol
+=========================================
+Matches Table 2 exactly: full training set, no validation holdout,
+min_features = max(3, d//3), same seeds.
 
-If EOD/AUC and selected features are unchanged → causal framing
-concession is cost-free and W1 is closed empirically.
-
-No DAG refit needed — just a scoring change on existing W.
+Directed column = Table 2 (free consistency check).
+Orientation-free column = same W, symmetrised scoring.
 
 Usage: python acml_orientation_ablation.py --n_seeds 10
 """
@@ -16,7 +13,6 @@ import os, sys, argparse, warnings, logging
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import roc_auc_score
 import xgboost as xgb
 
 warnings.filterwarnings('ignore')
@@ -27,8 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from causalgbm_experiments_v2 import (
     CausalFeatureSelector, compute_metrics,
     load_adult, load_acs_income, load_compas,
-    load_german, load_bank, load_taiwan_credit,
-    load_online_shoppers,
+    load_bank, load_taiwan_credit, load_online_shoppers,
     load_synthetic_loan, load_synthetic_hiring,
 )
 
@@ -44,45 +39,30 @@ DATASETS = {
 }
 
 
-def select_with_symmetrised_scores(sel, d, alpha=0.5, tau=0.2, min_features=3):
+def orientation_free_selection(adj, correlations, d, alpha=0.5, tau=0.2, min_features=3):
     """
-    Re-score using symmetrised (orientation-destroyed) weights.
-    W is (d+2, d+2) over [X_1..X_d, A, Y]. A=index d, Y=index d+1.
-    
-    Original:  proxy_j = |W[d, j]|,     pred_j = |W[j, d+1]|
-    Symmetric: proxy_j = max(|W[d,j]|, |W[j,d]|)
-               pred_j  = max(|W[j,d+1]|, |W[d+1,j]|)
+    Apply orientation-free scoring to the SAME learned adjacency matrix.
+    proxy_j = max(|W[A,j]|, |W[j,A]|)   (undirected skeleton)
+    pred_j  = max(|W[j,Y]|, |W[Y,j]|)   (undirected skeleton)
+    Both use max-aggregation with correlation for proxy signal.
     """
-    if not hasattr(sel, 'learned_adjacency_') or sel.learned_adjacency_ is None:
-        return None, None
-    
-    W = sel.learned_adjacency_
     A_idx, Y_idx = d, d + 1
-    
-    # Original scores
-    orig_proxy = np.abs(W[A_idx, :d])
-    orig_pred = np.abs(W[:d, Y_idx])
-    
-    # Symmetrised scores
-    sym_proxy = np.maximum(np.abs(W[A_idx, :d]), np.abs(W[:d, A_idx]))
-    sym_pred = np.maximum(np.abs(W[:d, Y_idx]), np.abs(W[Y_idx, :d]))
-    
-    # Also get correlation for max-aggregation
-    corr_A = np.abs(sel.correlations_) if hasattr(sel, 'correlations_') else sym_proxy
-    
-    # Apply max-aggregation with correlation (same as CausalGBM)
-    sym_proxy_max = np.maximum(sym_proxy, corr_A)
-    
-    # Score and select
+
+    sym_proxy = np.maximum(np.abs(adj[A_idx, :d]), np.abs(adj[:d, A_idx]))
+    sym_pred = np.maximum(np.abs(adj[:d, Y_idx]), np.abs(adj[Y_idx, :d]))
+
+    # Max-aggregation with correlation
+    sym_proxy_max = np.maximum(sym_proxy, correlations)
+
     scores = sym_pred - alpha * sym_proxy_max
     selected = set(np.where(scores >= tau)[0])
     if len(selected) < min_features:
         selected = set(np.argsort(scores)[-min_features:])
-    
-    return sorted(selected), scores
+
+    return sorted(selected)
 
 
-def run_ablation(n_seeds=10, output_dir='results/acml2026/orientation'):
+def run(n_seeds=10, output_dir='results/acml2026/orientation'):
     os.makedirs(output_dir, exist_ok=True)
     results = []
 
@@ -95,9 +75,9 @@ def run_ablation(n_seeds=10, output_dir='results/acml2026/orientation'):
 
         X, y, sens = dataset.X, dataset.y, dataset.sensitive
         d = X.shape[1]
-        min_feat = max(3, d // 3)
+        min_feat = max(3, d // 3)  # Table 2's rule
         logger.info(f"\n{'='*60}")
-        logger.info(f"{ds_name} (n={len(X)}, d={d})")
+        logger.info(f"{ds_name} (n={len(X)}, d={d}, min_feat={min_feat})")
         logger.info(f"{'='*60}")
 
         for seed in range(n_seeds):
@@ -112,68 +92,71 @@ def run_ablation(n_seeds=10, output_dir='results/acml2026/orientation'):
             s_te = np.asarray(s_te, dtype=float)
             y_te = np.asarray(y_te, dtype=float)
 
-            # Fit DAGMA once
+            # Fit DAGMA once on FULL training set (no validation holdout)
             sel = CausalFeatureSelector(
                 d, alpha=0.5, threshold=0.2,
                 min_features=min_feat,
                 n_iterations=500, aggregation='max', device='cpu')
             sel.fit(X_tr_sc, s_tr, y_tr)
-            orig_selected = set(sel.selected_)
 
-            # --- Original CausalGBM ---
-            Xtr_s = sel.transform(X_tr_sc)
-            Xte_s = sel.transform(X_te_sc)
-            m = xgb.XGBClassifier(n_estimators=100, random_state=seed, verbosity=0)
-            m.fit(Xtr_s, y_tr)
-            met_orig = compute_metrics(y_te, m.predict(Xte_s), m.predict_proba(Xte_s)[:, 1], s_te)
-            results.append({'dataset': ds_name, 'method': 'CausalGBM (directed)',
-                           'seed': seed, 'n_feats': len(orig_selected), **met_orig})
+            # ---- DIRECTED (should reproduce Table 2) ----
+            dir_selected = sorted(sel.selected_)
+            m_dir = xgb.XGBClassifier(n_estimators=100, random_state=seed, verbosity=0)
+            m_dir.fit(X_tr_sc[:, dir_selected], y_tr)
+            met_dir = compute_metrics(
+                y_te, m_dir.predict(X_te_sc[:, dir_selected]),
+                m_dir.predict_proba(X_te_sc[:, dir_selected])[:, 1], s_te)
+            results.append({'dataset': ds_name, 'method': 'Directed',
+                           'seed': seed, 'n_feats': len(dir_selected), **met_dir})
 
-            # --- Symmetrised (orientation destroyed) ---
-            sym_selected, sym_scores = select_with_symmetrised_scores(
-                sel, d, alpha=0.5, tau=0.2, min_features=min_feat)
+            # ---- ORIENTATION-FREE (same W, symmetrised scoring) ----
+            adj = sel.learned_adjacency_
+            if adj is not None:
+                sym_selected = orientation_free_selection(
+                    adj, sel.correlations_, d,
+                    alpha=0.5, tau=0.2, min_features=min_feat)
 
-            if sym_selected is not None:
-                Xtr_sym = X_tr_sc[:, sym_selected]
-                Xte_sym = X_te_sc[:, sym_selected]
-                m = xgb.XGBClassifier(n_estimators=100, random_state=seed, verbosity=0)
-                m.fit(Xtr_sym, y_tr)
-                met_sym = compute_metrics(y_te, m.predict(Xte_sym), m.predict_proba(Xte_sym)[:, 1], s_te)
+                m_sym = xgb.XGBClassifier(n_estimators=100, random_state=seed, verbosity=0)
+                m_sym.fit(X_tr_sc[:, sym_selected], y_tr)
+                met_sym = compute_metrics(
+                    y_te, m_sym.predict(X_te_sc[:, sym_selected]),
+                    m_sym.predict_proba(X_te_sc[:, sym_selected])[:, 1], s_te)
 
-                jac = len(orig_selected & set(sym_selected)) / len(orig_selected | set(sym_selected)) if len(orig_selected | set(sym_selected)) > 0 else 1.0
+                jac = len(set(dir_selected) & set(sym_selected)) / len(set(dir_selected) | set(sym_selected))
 
-                results.append({'dataset': ds_name, 'method': 'CausalGBM (symmetric)',
+                results.append({'dataset': ds_name, 'method': 'Orientation-free',
                                'seed': seed, 'n_feats': len(sym_selected),
                                'jaccard': jac, **met_sym})
-            else:
-                logger.warning(f"  {ds_name} seed {seed}: W_ not exposed, skipping symmetric")
 
             if seed == 0:
-                logger.info(f"  Directed:  EOD={met_orig['eod']:.4f}  AUC={met_orig['auc']:.3f}  K={len(orig_selected)}")
-                if sym_selected is not None:
-                    logger.info(f"  Symmetric: EOD={met_sym['eod']:.4f}  AUC={met_sym['auc']:.3f}  K={len(sym_selected)}  J={jac:.2f}")
+                logger.info(f"  Directed:         EOD={met_dir['eod']:.4f}  AUC={met_dir['auc']:.3f}  K={len(dir_selected)}  feats={dir_selected}")
+                if adj is not None:
+                    logger.info(f"  Orientation-free: EOD={met_sym['eod']:.4f}  AUC={met_sym['auc']:.3f}  K={len(sym_selected)}  J={jac:.2f}  feats={sym_selected}")
 
     import pandas as pd
     df = pd.DataFrame(results)
     df.to_csv(os.path.join(output_dir, 'orientation_ablation.csv'), index=False)
 
-    print("\n" + "=" * 70)
-    print("ORIENTATION ABLATION: Directed vs Symmetrised DAG")
-    print("=" * 70)
-    for ds_name in DATASETS:
-        ds_df = df[df['dataset'] == ds_name]
-        if ds_df.empty:
+    print("\n" + "=" * 80)
+    print("ORIENTATION ABLATION (Table 2 protocol)")
+    print("Directed column should match Table 2 exactly")
+    print("=" * 80)
+    print(f"\n{'Dataset':<18s} {'Dir EOD':>8s} {'Free EOD':>9s} {'|D|':>6s} {'Dir AUC':>8s} {'Free AUC':>9s} {'J':>5s}")
+    print("-" * 68)
+
+    for ds in DATASETS:
+        d_df = df[(df['dataset'] == ds) & (df['method'] == 'Directed')]
+        s_df = df[(df['dataset'] == ds) & (df['method'] == 'Orientation-free')]
+        if d_df.empty:
             continue
-        d_eod = ds_df[ds_df['method'] == 'CausalGBM (directed)']['eod'].mean()
-        s_df = ds_df[ds_df['method'] == 'CausalGBM (symmetric)']
+        d_eod, d_auc = d_df['eod'].mean(), d_df['auc'].mean()
         if s_df.empty:
-            print(f"  {ds_name}: symmetric not available (W_ not exposed)")
+            print(f"{ds:<18s} {d_eod:>8.4f}    N/A")
             continue
-        s_eod = s_df['eod'].mean()
+        s_eod, s_auc = s_df['eod'].mean(), s_df['auc'].mean()
+        delta = abs(d_eod - s_eod)
         jac = s_df['jaccard'].mean()
-        match = "IDENTICAL" if abs(d_eod - s_eod) < 0.001 and jac > 0.95 else (
-            "SIMILAR" if abs(d_eod - s_eod) < 0.005 else "DIFFERENT")
-        print(f"  {ds_name}: directed={d_eod:.4f}  symmetric={s_eod:.4f}  J={jac:.2f}  → {match}")
+        print(f"{ds:<18s} {d_eod:>8.4f} {s_eod:>9.4f} {delta:>6.3f} {d_auc:>8.3f} {s_auc:>9.3f} {jac:>5.2f}")
 
     print(f"\nSaved: {os.path.join(output_dir, 'orientation_ablation.csv')}")
 
@@ -183,4 +166,4 @@ if __name__ == '__main__':
     parser.add_argument('--n_seeds', type=int, default=10)
     parser.add_argument('--output_dir', default='results/acml2026/orientation')
     args = parser.parse_args()
-    run_ablation(n_seeds=args.n_seeds, output_dir=args.output_dir)
+    run(n_seeds=args.n_seeds, output_dir=args.output_dir)
